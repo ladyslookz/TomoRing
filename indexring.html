@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TomoTimer - Auto Pomodoro</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Prompt', sans-serif; overflow: hidden; }
+        @keyframes bounce-move {
+            0% { transform: translate(0, 0) rotate(0deg); }
+            25% { transform: translate(80vw, 30vh) rotate(45deg); }
+            50% { transform: translate(40vw, 70vh) rotate(90deg); }
+            75% { transform: translate(-30vw, 40vh) rotate(180deg); }
+            100% { transform: translate(0, 0) rotate(360deg); }
+        }
+        @keyframes exercise-bounce {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-20px) scale(1.1); }
+        }
+        .animate-tomato {
+            animation: bounce-move 8s infinite alternate ease-in-out;
+        }
+        .exercise-item {
+            animation: exercise-bounce 1s ease-in-out infinite;
+            font-size: 4rem;
+        }
+        .exercise-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+    </style>
+</head>
+<body id="body-bg" class="bg-amber-50 text-slate-800 h-screen w-screen flex items-center justify-center px-4 transition-colors duration-500 relative overflow-auto">
+
+    <!-- Background Walking Tomato (Active only during Break) -->
+    <div id="walking-tomato" class="absolute text-5xl pointer-events-none hidden z-0 animate-tomato">
+        🍅
+    </div>
+
+    <div class="max-w-sm w-full space-y-5 z-10">
+        
+        <!-- Header -->
+        <div class="text-center space-y-1">
+            <h1 class="text-3xl font-bold text-red-500">🍅 TomoTimer</h1>
+            <p id="app-subtitle" class="text-sm text-slate-500">ระบบจับเวลาอัตโนมัติ (25 / 5 นาที)</p>
+        </div>
+
+        <!-- Tomato Timer Card -->
+        <div class="bg-white/90 backdrop-blur-md p-6 rounded-3xl shadow-lg border-2 border-red-100 text-center space-y-4 relative">
+            
+            <!-- Tomato Leaf Badge -->
+            <div class="flex justify-center">
+                <span id="mode-badge" class="bg-red-500 text-white text-xs px-3 py-1 rounded-full font-semibold shadow-sm transition-colors duration-300">
+                    🎯 ช่วงทำงาน (Focus)
+                </span>
+            </div>
+
+            <div>
+                <div id="timer-display" class="text-6xl font-bold text-slate-800 tracking-wider my-3">25:00</div>
+                <div id="status-text" class="text-xs text-slate-400 font-medium">โฟกัสกับงานตรงหน้า ห้ามวอกแวก!</div>
+            </div>
+
+            <!-- Exercise Guide (Show during break) -->
+            <div id="exercise-guide" class="hidden">
+                <p class="text-sm font-semibold text-green-600 mb-3">🏃 ออกกำลังกายนิดหน่อย:</p>
+                <div class="exercise-grid">
+                    <div class="exercise-item">🤸</div>
+                    <div class="exercise-item">🧘</div>
+                    <div class="exercise-item">🚴</div>
+                    <div class="exercise-item">🏃</div>
+                    <div class="exercise-item">🙆</div>
+                    <div class="exercise-item">💪</div>
+                </div>
+            </div>
+
+            <div class="flex justify-center gap-2 pt-2">
+                <button onclick="startTimer()" class="bg-red-500 text-white px-5 py-2.5 rounded-2xl text-sm font-semibold shadow-md hover:bg-red-600 transition active:scale-95">เริ่มจับเวลา</button>
+                <button onclick="pauseTimer()" class="bg-amber-400 text-white px-4 py-2.5 rounded-2xl text-sm font-semibold shadow-md hover:bg-amber-500 transition active:scale-95">พักชั่วคราว</button>
+                <button onclick="resetTimer()" class="bg-slate-100 text-slate-600 px-4 py-2.5 rounded-2xl text-sm font-semibold hover:bg-slate-200 transition active:scale-95">รีเซ็ต</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let timer;
+        let timeLeft = 25 * 60;
+        let isRunning = false;
+        let currentMode = 'focus';
+
+        // เสียงเตือนดังเตอะเตอะ 🔔
+        function playAlarmSound() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // สร้างเสียง "บี บี บี"
+                for (let i = 0; i < 5; i++) {
+                    setTimeout(() => {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        
+                        osc.type = 'sine';
+                        osc.frequency.value = 800 + (i * 100); // ความถี่เพิ่มขึ้น
+                        
+                        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                        
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start();
+                        osc.stop(audioCtx.currentTime + 0.3);
+                    }, i * 400);
+                }
+                
+                // สั่นโทรศัพท์ (ถ้าสนับสนุน)
+                if (navigator.vibrate) {
+                    navigator.vibrate([200, 100, 200, 100, 200]);
+                }
+                
+            } catch (e) {
+                console.log("Audio not supported");
+            }
+        }
+
+        function startTimer() {
+            if (isRunning) return;
+            isRunning = true;
+            timer = setInterval(() => {
+                if (timeLeft > 0) {
+                    timeLeft--;
+                    updateDisplay();
+                } else {
+                    clearInterval(timer);
+                    isRunning = false;
+                    playAlarmSound(); // 🔔 เสียงเตือนดัง
+
+                    if (currentMode === 'focus') {
+                        currentMode = 'break';
+                        timeLeft = 5 * 60;
+                        triggerBreakUI(true);
+                        alert("⏰ หมดเวลาทำงานแล้ว!\n✨ พักผ่อนยืดเส้น 5 นาทีอัตโนมัติครับ 🍅");
+                        startTimer();
+                    } else {
+                        currentMode = 'focus';
+                        timeLeft = 25 * 60;
+                        triggerBreakUI(false);
+                        alert("⏰ หมดเวลาพักแล้ว!\n💪 ลุยทำงานต่อกันเลยครับ!");
+                        startTimer();
+                    }
+                }
+            }, 1000);
+        }
+
+        function pauseTimer() {
+            clearInterval(timer);
+            isRunning = false;
+        }
+
+        function resetTimer() {
+            clearInterval(timer);
+            isRunning = false;
+            currentMode = 'focus';
+            timeLeft = 25 * 60;
+            triggerBreakUI(false);
+            updateDisplay();
+        }
+
+        function updateDisplay() {
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = timeLeft % 60;
+            document.getElementById('timer-display').innerText = 
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        function triggerBreakUI(isBreak) {
+            const badge = document.getElementById('mode-badge');
+            const statusText = document.getElementById('status-text');
+            const bodyBg = document.getElementById('body-bg');
+            const tomatoWalker = document.getElementById('walking-tomato');
+            const exerciseGuide = document.getElementById('exercise-guide');
+
+            if (isBreak) {
+                badge.innerText = "🌿 ช่วงพักเบรก (Break)";
+                badge.className = "bg-green-500 text-white text-xs px-3 py-1 rounded-full font-semibold shadow-sm transition-colors duration-300";
+                statusText.innerText = "ลุกขึ้นยืดเส้นยืดสาย ผ่อนคลายสายตานะครับ~";
+                bodyBg.className = "bg-emerald-50 text-slate-800 h-screen w-screen flex items-center justify-center px-4 transition-colors duration-500 relative overflow-auto";
+                tomatoWalker.classList.remove('hidden');
+                exerciseGuide.classList.remove('hidden'); // 🏃 แสดงรูปออกกำลังกาย
+            } else {
+                badge.innerText = "🎯 ช่วงทำงาน (Focus)";
+                badge.className = "bg-red-500 text-white text-xs px-3 py-1 rounded-full font-semibold shadow-sm transition-colors duration-300";
+                statusText.innerText = "โฟกัสกับงานตรงหน้า ห้ามวอกแวก!";
+                bodyBg.className = "bg-amber-50 text-slate-800 h-screen w-screen flex items-center justify-center px-4 transition-colors duration-500 relative overflow-auto";
+                tomatoWalker.classList.add('hidden');
+                exerciseGuide.classList.add('hidden'); // 🚫 ซ่อนรูปออกกำลังกาย
+            }
+            updateDisplay();
+        }
+    </script>
+</body>
+</html>
